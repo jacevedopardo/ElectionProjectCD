@@ -1,0 +1,182 @@
+---
+title: "ElectionProject"
+author: "Julian A. Acevedo Pardo"
+date: "2018-10-15"
+output: workflowr::wflow_html
+---
+
+## Introduction
+
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(ggrepel)
+
+URL2 <- "https://en.wikipedia.org/wiki/United_States_presidential_election,_2016"
+
+election <- read_html(URL2) %>% html_nodes(xpath = '//*[@id="mw-content-text"]/div/div[37]/table') %>% html_table(fill = TRUE)
+pelect <- election[[1]]
+
+names(pelect)[1]<-"State"
+names(pelect)[2]<-"Junk2"
+names(pelect)[3]<-"Hillary"
+names(pelect)[4]<-"Junk4"
+names(pelect)[5]<-"Junk5"
+names(pelect)[6]<-"Donald"
+names(pelect)[7]<- "Junk7"
+names(pelect)[8]<- "Junk8"
+names(pelect)[9]<- "Junk9"
+names(pelect)[10]<-"Junk10"
+names(pelect)[11]<-"Junk11"
+names(pelect)[12]<-"Junk12"
+names(pelect)[13]<-"Junk13"
+names(pelect)[14]<-"Junk14"
+names(pelect)[15]<-"Junk15"
+names(pelect)[16]<-"Junk16"
+names(pelect)[17]<-"Junk17"
+names(pelect)[18]<-"Junk18"
+names(pelect)[19]<-"Junk19"
+names(pelect)[20]<-"Junk20"
+names(pelect)[21]<-"Junk21"
+names(pelect)[22]<-"Junk22"
+names(pelect)[23]<-"Junk23"
+names(pelect)[24]<-"Junk24"
+names(pelect)[25]<-"Junk25"
+
+pelect <- as.tibble(pelect) %>%
+  select(State, Hillary, Donald) %>%
+  slice(-c(1,10,22,23,32,33,34,58)) %>%
+  mutate(Clinton=parse_number(Hillary, na=character()),
+         Trump=parse_number(Donald, na=character()),
+         PercentDem=((Clinton/(Clinton+Trump))*100),
+         State=replace(State, State=="Maine (at-lg)", "Maine"),
+         State=replace(State, State=="Nebraska (at-lg)", "Nebraska")) %>%
+  select(State,PercentDem)
+
+###Visualizing Election Data
+
+qplot(PercentDem,State,data=pelect)
+
+pelect <- mutate(pelect, State2=state.abb)
+
+g1 <- ggplot(pelect, aes(x=State2, y=PercentDem)) +
+  geom_bar(stat="identity")
+
+g2 <- g1 +
+  ylab("Clinton's 2016 Percentage of the Two-Party Vote") +
+  xlab("State")+
+  ggtitle("2016 Presidential Election Results By State")+
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.text.x = element_text(angle=60))
+
+g2
+
+g3 <- ggplot(pelect, aes(x=reorder(State2,PercentDem), y=PercentDem)) +
+  geom_bar(stat="identity")
+
+g4 <- g3 +
+  ylab("Clinton's 2016 Percentage of the Two-Party Vote") +
+  xlab("State")+
+  ggtitle("2016 Presidential Election Results By State")+
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  theme(axis.text.x = element_text(angle=60))
+
+g4
+
+housing <- read_csv("https://raw.githubusercontent.com/IQSS/workshops/master/R/Rgraphics/dataSets/landdata-states.csv")
+
+g5 <- ggplot(housing, aes(x = Home.Value)) +
+  geom_histogram(stat = "bin", binwidth=4000) +
+  ylab("Housing Counts in Increments of 4000") +
+  xlab("Home Values in Dollars")
+g5 + ggtitle("Housing Data")
+
+HousingMeans <- aggregate(housing["Home.Value"], housing["State"], FUN=mean) %>%
+  slice(-8) %>%
+  mutate(State2=State) %>%
+  select(State2, Home.Value)
+
+ElectionData <- as.tibble(inner_join(HousingMeans,pelect))
+
+
+ElectionPlot <-ggplot(data=ElectionData, aes(x = log (Home.Value), y = PercentDem)) +
+  geom_point(color='black') +
+  geom_text_repel(aes(label=State2))+
+  geom_smooth(method = "lm", se=TRUE, color='black')+
+  xlab("Historic Home Price")+
+  ylab("Clinton Support")
+ElectionPlot
+
+fit1 <- lm(PercentDem ~ Home.Value, data=ElectionData)
+summary(fit1)
+
+fit2 <- lm(PercentDem ~ log(Home.Value), data=ElectionData)
+summary(fit2)
+
+mean(ElectionData$Home.Value)
+median(ElectionData$Home.Value)
+
+ElectionData<-ElectionData %>% mutate(South=case_when(State2=="AL" |
+                                                        State2=="AR" |
+                                                        State2=="MS" |
+                                                        State2=="GA" |
+                                                        State2=="FL" |
+                                                        State2=="SC" |
+                                                        State2=="NC" |
+                                                        State2=="TN" |
+                                                        State2=="TX" |
+                                                        State2=="VA" |
+                                                        State2=="WV" |
+                                                        State2=="OK" |
+                                                        State2=="LA" |
+                                                        State2=="KY" ~ 1),
+                                      South=replace_na(South,0))
+
+
+ElectionData %>%
+  group_by(South) %>%
+  summarise(PercentDem = mean(PercentDem))
+
+fit1 <- lm(PercentDem ~ log(Home.Value) + South, data=ElectionData)
+summary(fit1)
+
+##################
+#Now we are scraping the web for partisanship data, and cleaning it up. .
+##################
+
+read_html("http://news.gallup.com/poll/203117/gop-maintains-edge-state-party-affiliation-2016.aspx") %>%
+  html_node(xpath='//*[@id="20170126154846"]/table') %>%
+  html_table(fill = TRUE) %>% as_tibble() -> partyid
+
+partyid <- slice(partyid, 3:52) %>%
+  rename(State=X1,DemLead=X4) %>%
+  select(State,DemLead) %>%
+  mutate(DemLead=as.numeric(DemLead))
+
+ElectionData <-inner_join(ElectionData,partyid)
+
+ElectionPlot2 <-ggplot(data=ElectionData, aes(x = DemLead, y = PercentDem)) +
+  geom_point(color='black') +
+  geom_text_repel(aes(label=State2))+
+  geom_smooth(method = "lm", se=TRUE, color='black')+
+  xlab("Democratic Lead")+
+  ylab("Clinton Share of the Two-Party Vote")
+ElectionPlot2
+
+ElectionPlot2 + ggtitle("Support for Secretary Clinton in 2016 by Partisanship") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+fit2 <- lm(PercentDem ~ log(Home.Value) + South + DemLead, data=ElectionData)
+summary(fit2)
+
+ElectionData %>% top_n(10, Home.Value) %>% arrange(desc(Home.Value))
+
+ElectionData %>% select(contains("State"))
+
+ElectionData %>% select("State", everything())
+
+ElectionData %>% rename_all(tolower)
+```
+
